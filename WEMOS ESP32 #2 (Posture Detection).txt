@@ -1,0 +1,232 @@
+// IR Sensor
+const int irPin = 12;      //8
+ 
+// FSR Sensors
+const int sensorPin1 = 35; //A3 
+const int sensorPin2 = 34; //A4
+const int sensorPin3 = 36; //A5
+const int sensorPin4 = 39; //A6
+ 
+// IN CASE A SHORT OCCURS
+const int relay1Pin = 17;  //4  
+const int relay2Pin = 25;  //3   
+ 
+// Vibration Motors
+const int motorPin1 = 27;  //6  
+const int motorPin2 = 16;  //5
+ 
+// Buzzer
+const int buzzer = 14;     //7
+ 
+// FSR's threshold value & max count
+int threshold = 80;
+int maxCount = 4;
+ 
+bool motorState = false;
+bool buzzerState = false;
+bool alarmState = false;
+ 
+ 
+// Alarm toggle switches
+bool vibrationState;
+bool soundAlarmState;
+ 
+void setup() {
+  Serial.begin(115200);
+  pinMode(irPin, INPUT);
+  pinMode(relay1Pin, OUTPUT);
+  pinMode(relay2Pin, OUTPUT);
+  pinMode(motorPin1, OUTPUT);
+  pinMode(motorPin2, OUTPUT);
+  pinMode(buzzer, OUTPUT);
+  digitalWrite(relay1Pin, HIGH);
+  digitalWrite(relay2Pin, HIGH);
+}
+ 
+ 
+void loop() {
+  Force_Sensor_Reading();
+  serialInput();
+  delay(50);
+}
+ 
+// Serial Input Command Configuration
+void serialInput() {
+  if (Serial.available()) {
+    char command = Serial.read();
+    if (command == '1') {       // Vibration Alarm Switch (vibrationState)
+      vibrationState = true;
+      Serial.println("Vibration Alarm: ON");
+    }
+    if (command == '2') {
+      vibrationState = false;
+      Serial.println("Vibration Alarm: OFF");
+    }
+    if (command == '3') {       // Sound Alarm Switch (soundAlarmState)
+      soundAlarmState = true;
+      Serial.println("Sound Alarm: ON");
+    }
+    if (command == '4') {
+      soundAlarmState = false;
+      Serial.println("Sound Alarm: OFF");
+    }
+  }
+}
+ 
+// Posture Detection System
+void Force_Sensor_Reading() {
+  int sensorValue1 = analogRead(sensorPin1);
+  int sensorValue2 = analogRead(sensorPin2);
+  int sensorValue3 = analogRead(sensorPin3);
+  int sensorValue4 = analogRead(sensorPin4);
+  int irSensorValue = digitalRead(irPin);
+ 
+  // count add 1 if sensor threshold is reached
+  int count = 0;
+  if (sensorValue1 > threshold) {
+    count++;
+  }
+  if (sensorValue2 > threshold) {
+    count++;
+  }
+  if (sensorValue3 > threshold) {
+    count++;
+  }
+  if (sensorValue4 > threshold) {
+    count++;
+  }
+ 
+  if (irSensorValue == LOW && alarmState == false) {
+    delay(500);
+    alarmState = true;
+    //digitalWrite(relay1Pin, LOW);
+    //digitalWrite(relay2Pin, LOW);
+    Serial.println("Detection System Activated");
+    startTone(2);
+    delay(1500);
+  } else if (irSensorValue == HIGH && alarmState == true) {
+    delay(500);
+    alarmState = false;
+    //digitalWrite(relay1Pin, HIGH);
+    //digitalWrite(relay2Pin, HIGH);
+    Serial.println("No one is sitting");
+    endTone(3);
+    delay(500);
+  }
+  
+  vibrationState = true;
+  soundAlarmState = true;
+ 
+  if (alarmState) {
+    if (count > 2) { // if 3-4 FSR is detected, MOTOR OFF 
+        motorState = false; 
+        buzzerState = false;
+      Serial.println("Correct Posture");   
+    } else if (count <= 1) {
+        motorState = false; 
+        buzzerState = false;
+      Serial.println("A person is sitting");
+    } else if (count == 2) {
+        motorState = true;
+        buzzerState = true;
+      Serial.println("Wrong Sitting Posture");
+    }
+ 
+ 
+    if (motorState == true && vibrationState == true) {
+      analogWrite(motorPin1, 255);
+      analogWrite(motorPin2, 255);
+      delay(1500);
+      analogWrite(motorPin1, 0);
+      analogWrite(motorPin2, 0);
+      delay(1500);
+    } else {
+      analogWrite(motorPin1, 0);
+      analogWrite(motorPin2, 0);
+    }
+ 
+    if (buzzerState == true && soundAlarmState == true) {
+      tone2();
+    } else {
+      noTone(buzzer);
+    }
+ 
+    delay(50);
+  }
+}
+ 
+void startTone(int times) {
+  for (int i = 0; i < times; i++) {
+    tone(buzzer, 900);
+    delay(80);
+    noTone(buzzer);
+    delay(180);
+  }
+ 
+  // Add an extra delay after the beeping sequence if needed
+  delay(500);
+}
+ 
+void endTone(int times) {
+  for (int i = 0; i < times; i++) {
+    tone(buzzer, 800);
+    delay(80);
+    noTone(buzzer);
+    delay(60);
+  }
+ 
+  // Add an extra delay after the beeping sequence if needed
+  delay(500);
+}
+ 
+void tone1() {
+  tone(buzzer, 800); //1
+  delay(50);
+  noTone(buzzer);
+  delay(100);
+  tone(buzzer, 800); //2
+  delay(50);
+  noTone(buzzer);
+  delay(100);
+  tone(buzzer, 800); //3
+  delay(50);
+  noTone(buzzer);
+  delay(200);
+ 
+  tone(buzzer, 800); //1
+  delay(100);
+  noTone(buzzer);
+  delay(100);
+  tone(buzzer, 800); //2
+  delay(360);
+  noTone(buzzer);
+  delay(200);
+ 
+  tone(buzzer, 800); //1
+  delay(50);
+  noTone(buzzer);
+  delay(100);
+  tone(buzzer, 800); //2
+  delay(50);
+  noTone(buzzer);
+  delay(100);
+  tone(buzzer, 800); //3
+  delay(50);
+  noTone(buzzer);
+  delay(600);
+}
+ 
+void tone2() {
+  tone(buzzer, 900); //1
+  delay(50);
+  noTone(buzzer);
+  delay(100);
+  tone(buzzer, 900); //2
+  delay(50);
+  noTone(buzzer);
+  delay(100);
+  tone(buzzer, 900); //3
+  delay(250);
+  noTone(buzzer);
+  delay(1500);
+}

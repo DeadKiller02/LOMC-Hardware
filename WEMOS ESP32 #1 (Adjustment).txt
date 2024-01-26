@@ -1,0 +1,382 @@
+#include <ESP32Servo.h>
+#include <WiFi.h>
+#include <Preferences.h>
+ 
+Preferences preferences;
+ 
+const char* ssid = "NodeMCU";
+const char* password = "zklj9873";
+WiFiServer server(80);
+ 
+// Servo Motor
+const int servoPin1 = 19;           //13
+const int servoPin2 = 18;           //12
+ 
+int servoAngle1 = 115;
+int servoAngle2 = 115;
+int servoStep;
+int levelCount3;
+ 
+Servo servo1;
+Servo servo2;
+ 
+// Linear Actuator (Seat Height)
+const int relay1Pin = 14;            //7
+const int relay2Pin = 27;            //6
+const int relay3Pin = 16;            //5
+const int relay4Pin = 17;            //4
+int levelCount1;
+ 
+// Linear Actuator (Backrest)
+const int relay5Pin = 5;              //10
+const int relay6Pin = 13;            //9
+const int relay7Pin = 12;            //8
+const int relay8Pin = 23;            //11
+int levelCount2;
+ 
+void setup() {
+  Serial.begin(115200);
+  preferences.begin("my-app", false); // Open the preferences with a namespace and auto-save disabled
+  levelCount1 = preferences.getInt("levelCount1", 0); // Load the last levelCount1 value
+  levelCount2 = preferences.getInt("levelCount2", 0); // Load the last levelCount2 value
+  levelCount3 = preferences.getInt("levelCount3", 0); // Load the last levelCount3 value
+  servoAngle1 = preferences.getInt("servoAngle1", 115); // Load the last servoAngle1 value
+  servoAngle2 = preferences.getInt("servoAngle2", 115); // Load the last servoAngle2 value
+  
+  WiFi.begin(ssid, password);
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(1000);
+    Serial.println("Connecting to WiFi...");
+  }
+  Serial.println("Connected to WiFi");
+ 
+  server.begin();
+ 
+  servo1.attach(servoPin1);
+  servo2.attach(servoPin2);
+  servo1.write(servoAngle1);
+  servo2.write(servoAngle2);
+ 
+  pinMode(relay1Pin, OUTPUT);
+  pinMode(relay2Pin, OUTPUT);
+  pinMode(relay3Pin, OUTPUT);
+  pinMode(relay4Pin, OUTPUT);
+  pinMode(relay5Pin, OUTPUT);
+  pinMode(relay6Pin, OUTPUT);
+  pinMode(relay7Pin, OUTPUT);
+  pinMode(relay8Pin, OUTPUT);
+ 
+  digitalWrite(relay1Pin, HIGH);
+  digitalWrite(relay2Pin, HIGH);
+  digitalWrite(relay3Pin, HIGH);
+  digitalWrite(relay4Pin, HIGH);
+  digitalWrite(relay5Pin, HIGH);
+  digitalWrite(relay6Pin, HIGH);
+  digitalWrite(relay7Pin, HIGH);
+  digitalWrite(relay8Pin, HIGH);
+}
+ 
+void loop() {
+  wifiCommunication();
+  preferences.putInt("levelCount1", levelCount1);
+  preferences.putInt("levelCount2", levelCount2);
+  preferences.putInt("levelCount3", levelCount3);
+  preferences.putInt("servoAngle1", servoAngle1);
+  preferences.putInt("servoAngle2", servoAngle2);
+  delay(2000);
+}
+ 
+void wifiCommunication() {
+  WiFiClient client = server.available();
+  if (client) {
+    Serial.println("App Connection Established");
+    while (client.connected()) {
+      if (client.available()) {
+        String request = client.readStringUntil('\r');
+        client.println("Hello from Arduino!");
+ 
+        // Check if the request contains the character "A"
+        if (request.indexOf('1') != -1) {
+          height_levelOne();
+        }
+        if (request.indexOf('2') != -1) {
+          height_levelTwo();
+        }
+        if (request.indexOf('3') != -1) {
+          height_levelThree();
+        }
+        if (request.indexOf('4') != -1) {
+          backrest_levelOne();
+        }
+        if (request.indexOf('5') != -1) {
+          backrest_levelTwo();
+        }
+        if (request.indexOf('6') != -1) {
+          inwardServo();
+        }
+        if (request.indexOf('7') != -1) {
+          outwardServo();
+        }
+        if (request.indexOf('8') != -1) {
+          focusedPreset();
+        }
+        if (request.indexOf('9') != -1) {
+          relaxedPreset();
+        }
+      }
+    }
+  }
+}
+ 
+// Condition to Adjust to Height Level Zero (low: min height)
+void height_levelOne() {
+  if (levelCount1 > 0 && levelCount1 == 2) {
+    Serial.println("LA Retracting: LEVEL ONE");       // Full retract, level 3 to 1 (20 sec)
+    levelCount1 -= 2;
+ 
+    actuator1_RETRACT();
+    actuator2_RETRACT();
+    delay(20000);
+ 
+    actuator1_STOP();
+    actuator2_STOP();
+ 
+  } else if (levelCount1 > 0 && levelCount1 == 1) {   
+    Serial.println("LA Retracting: LEVEL ONE");       // Half retract, level 2 to 1 (10 sec)
+    levelCount1 -= 1;
+ 
+    actuator1_RETRACT();
+    actuator2_RETRACT();
+    delay(10000);
+ 
+    actuator1_STOP();
+    actuator2_STOP();
+ 
+  } else if (levelCount1 == 0) {
+    actuator1_STOP();
+    actuator2_STOP();
+    Serial.println("Level One, reached");
+  }
+  Serial.println(levelCount1);
+}
+ 
+// Condition to Adjust to Height Level One (high: max height)
+void height_levelTwo() {
+  if (levelCount1 > 1) {
+    Serial.println("LA Retracting: LEVEL TWO");       // Half retract, level 3 to 2 (10 sec)
+    levelCount1 -= 1;
+ 
+    actuator1_RETRACT();
+    actuator2_RETRACT();
+    delay(10000);
+ 
+    actuator1_STOP();
+    actuator2_STOP();
+    
+  } else if (levelCount1 < 1) {
+    Serial.println("LA Extending: LEVEL TWO");        // Half extend, level 1 to 2 (10 sec)
+    levelCount1 += 1;
+ 
+    actuator1_EXTEND();
+    actuator2_EXTEND();
+    delay(10000);
+ 
+    actuator1_STOP();
+    actuator2_STOP();
+ 
+  } else if (levelCount1 == 1) {
+    actuator1_STOP();
+    actuator2_STOP();
+    Serial.println("Level Two, reached");
+  }
+  Serial.println(levelCount1);
+}
+ 
+// Condition to Adjust to Height Level Three (high: max height)
+void height_levelThree() {
+  if (levelCount1 < 2 && levelCount1 == 0) {
+    Serial.println("LA Extending: LEVEL THREE");       // Full extend, level 1 to 3 (20 sec)
+    levelCount1 += 2;
+ 
+    actuator1_EXTEND();
+    actuator2_EXTEND();
+    delay(20000);
+ 
+    actuator1_STOP();
+    actuator2_STOP();
+ 
+  } else if (levelCount1 < 2 && levelCount1 == 1) {
+    Serial.println("LA Extending: LEVEL THREE");       // Half extend, level 2 to 3 (10 sec)
+    levelCount1 += 1;
+ 
+    actuator1_EXTEND();
+    actuator2_EXTEND();
+    delay(10000);
+ 
+    actuator1_STOP();
+    actuator2_STOP();
+ 
+  } else if (levelCount1 == 2) {
+    actuator1_STOP();
+    actuator2_STOP();
+    Serial.println("Level Three, reached");
+  }
+  Serial.println(levelCount1);
+}
+ 
+// Functions for Linear 1 (Height)
+void actuator1_EXTEND() {
+  digitalWrite(relay1Pin, LOW);
+  digitalWrite(relay2Pin, HIGH);
+}
+ 
+void actuator1_RETRACT() {
+  digitalWrite(relay1Pin, HIGH);
+  digitalWrite(relay2Pin, LOW);
+}
+ 
+void actuator1_STOP() {
+  digitalWrite(relay1Pin, HIGH);
+  digitalWrite(relay2Pin, HIGH);
+}
+ 
+// Functions for Linear 2 (Height)
+void actuator2_EXTEND() {
+  digitalWrite(relay3Pin, LOW);
+  digitalWrite(relay4Pin, HIGH);
+}
+ 
+void actuator2_RETRACT() {
+  digitalWrite(relay3Pin, HIGH);
+  digitalWrite(relay4Pin, LOW);
+}
+ 
+void actuator2_STOP() {
+  digitalWrite(relay3Pin, HIGH);
+  digitalWrite(relay4Pin, HIGH);
+}
+ 
+// Condition to Adjust Backrest to Level Zero (forward: default)
+void backrest_levelOne() {
+  if (levelCount2 > 0) {
+    Serial.println("LA Pulling: FORWARD");        // Full retract, Level 2 to 1 (16 sec) 
+    levelCount2 -= 1;
+ 
+    actuator3_RETRACT();
+    actuator4_RETRACT();
+    delay(8000);
+ 
+    actuator3_STOP();
+    actuator4_STOP();
+ 
+  } else if (levelCount2 == 0) {
+    actuator3_STOP();
+    actuator4_STOP();
+    Serial.println("FORWARD-state reached");
+  }
+  Serial.println(levelCount2);
+}
+ 
+// Condition to Adjust Backrest to Level Zero (backward: max reclined)
+void backrest_levelTwo() {
+  if (levelCount2 < 1) {
+    Serial.println("LA Pushing: BACKWARD");         // Full extend, Level 1 to 2 (16 sec)
+    levelCount2 += 1;
+ 
+    actuator3_EXTEND();
+    actuator4_EXTEND();
+    delay(8000);
+ 
+    actuator3_STOP();
+    actuator4_STOP();
+ 
+  } else if (levelCount2 == 1) {
+    actuator3_STOP();
+    actuator4_STOP();
+    Serial.println("BACKWARD-state reached");
+  }
+  Serial.println(levelCount2);
+}
+ 
+// Functions for Linear 3 (Backrest)
+void actuator3_EXTEND() {
+  digitalWrite(relay5Pin, LOW);
+  digitalWrite(relay6Pin, HIGH);
+}
+ 
+void actuator3_RETRACT() {
+  digitalWrite(relay5Pin, HIGH);
+  digitalWrite(relay6Pin, LOW);
+}
+ 
+void actuator3_STOP() {
+  digitalWrite(relay5Pin, HIGH);
+  digitalWrite(relay6Pin, HIGH);
+}
+ 
+// Functions for Linear 4 (Backrest)
+void actuator4_EXTEND() {
+  digitalWrite(relay7Pin, LOW);
+  digitalWrite(relay8Pin, HIGH);
+}
+ 
+void actuator4_RETRACT() {
+  digitalWrite(relay7Pin, HIGH);
+  digitalWrite(relay8Pin, LOW);
+}
+ 
+void actuator4_STOP() {
+  digitalWrite(relay7Pin, HIGH);
+  digitalWrite(relay8Pin, HIGH);
+}
+ 
+void inwardServo() {
+  if (levelCount3 > 0) {
+    Serial.println("Servo moving Inward: ENABLED");
+    levelCount3 -= 1;
+ 
+    for (servoStep = 115; servoStep >= 0; servoStep--) {
+      servo1.write(servoAngle1++);
+      servo2.write(servoAngle2--);
+      delay(5);
+    }
+ 
+  } else if (levelCount3 == 0) {
+    Serial.println("Armrest ENABLED-state reached");
+  }
+  Serial.println(levelCount3);
+}
+ 
+void outwardServo() {
+  if (levelCount3 < 1) {
+    Serial.println("Servo moving Outward: DISABLED");
+    levelCount3 += 1;
+ 
+    servo1.write(servoAngle1++);
+    servo2.write(servoAngle2--);
+ 
+    for (servoStep = 0; servoStep <= 115; servoStep++) {
+      servo1.write(servoAngle1--);
+      servo2.write(servoAngle2++);
+      delay(5);
+    }
+ 
+  } else if (levelCount3 == 1) {
+    Serial.println("Armrest DISABLED-state reached");
+  }
+  Serial.println(levelCount3);
+}
+ 
+void focusedPreset() {
+  Serial.println("Activating FOCUSED preset");
+  height_levelTwo();      // Height LEVEL TWO (Middle) = 20s
+  inwardServo();          // Armrest ENABLED = 3s
+  backrest_levelOne();    // Backrest FORWARD = 16s
+}
+ 
+void relaxedPreset() {
+  Serial.println("Activating RELAXED preset");
+  height_levelOne();      // Height LEVEL ONE (Lowest) = 20s
+  outwardServo();         // Armrest DISABLED = 3s
+  backrest_levelTwo();    // Backrest BACKWARD = 16s
+}
